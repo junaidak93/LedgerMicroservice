@@ -30,6 +30,8 @@ public class AuditMiddleware
 
             stopwatch.Stop();
 
+            responseBody.Position = 0;
+
             // Log request/response for audit purposes
             var requestPath = context.Request.Path.Value ?? "";
             var method = context.Request.Method;

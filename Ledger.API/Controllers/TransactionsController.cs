@@ -55,7 +55,7 @@ public class TransactionsController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Admin,SuperAdmin")]
+    //[Authorize(Roles = "Admin,SuperAdmin")]
     public async Task<ActionResult<IEnumerable<TransactionResponseDto>>> GetAllTransactions(
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 10)
