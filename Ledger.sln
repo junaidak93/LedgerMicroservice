@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ledger.API", "Ledger.API\Ledger.API.csproj", "{DC19DF54-DE3E-4741-A6E7-79CE1A87177C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ledger.Tests", "Ledger.Tests\Ledger.Tests.csproj", "{150F0334-EEA4-49E0-95CA-F350B9BF3034}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DC19DF54-DE3E-4741-A6E7-79CE1A87177C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DC19DF54-DE3E-4741-A6E7-79CE1A87177C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DC19DF54-DE3E-4741-A6E7-79CE1A87177C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DC19DF54-DE3E-4741-A6E7-79CE1A87177C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{150F0334-EEA4-49E0-95CA-F350B9BF3034}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{150F0334-EEA4-49E0-95CA-F350B9BF3034}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{150F0334-EEA4-49E0-95CA-F350B9BF3034}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{150F0334-EEA4-49E0-95CA-F350B9BF3034}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
