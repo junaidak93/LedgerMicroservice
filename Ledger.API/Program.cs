@@ -101,6 +101,11 @@ builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 builder.Services.AddScoped<IStatsRepository, StatsRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
+builder.Services.AddScoped<IIdempotencyRepository, IdempotencyRepository>();
+
+// Idempotency cleanup service
+builder.Services.Configure<Ledger.API.Services.IdempotencyCleanupOptions>(builder.Configuration.GetSection("IdempotencyCleanup"));
+builder.Services.AddHostedService<Ledger.API.Services.IdempotencyCleanupService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();

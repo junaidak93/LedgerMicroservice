@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.RateLimiting;
 using Ledger.API.DTOs;
 using Ledger.API.Services;
 using Ledger.API.Helpers;
+using Ledger.API.Repositories;
+using System.Text.Json;
 
 namespace Ledger.API.Controllers;
 
@@ -15,13 +17,16 @@ public class TransactionsController : ControllerBase
 {
     private readonly ITransactionService _transactionService;
     private readonly IAuditService _auditService;
+    private readonly IIdempotencyRepository _idempotencyRepository;
 
     public TransactionsController(
         ITransactionService transactionService,
-        IAuditService auditService)
+        IAuditService auditService,
+        IIdempotencyRepository idempotencyRepository)
     {
         _transactionService = transactionService;
         _auditService = auditService;
+        _idempotencyRepository = idempotencyRepository;
     }
 
     [HttpPost]
@@ -34,8 +39,26 @@ public class TransactionsController : ControllerBase
             {
                 return Unauthorized();
             }
+            var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault();
 
-            var result = await _transactionService.CreateTransactionAsync(userId.Value, dto);
+            if (!string.IsNullOrWhiteSpace(idempotencyKey) && _idempotencyRepository != null)
+            {
+                var existing = await _idempotencyRepository.GetByKeyAsync(idempotencyKey);
+                if (existing != null)
+                {
+                    try
+                    {
+                        var cached = JsonSerializer.Deserialize<TransactionResponseDto>(existing.ResponseBody);
+                        if (cached != null)
+                        {
+                            return CreatedAtAction(nameof(GetTransaction), new { id = cached.Id }, cached);
+                        }
+                    }
+                    catch { /* ignore and proceed to reprocess */ }
+                }
+            }
+
+            var result = await _transactionService.CreateTransactionAsync(userId.Value, dto, idempotencyKey);
             
             await _auditService.LogAsync(
                 "CreateTransaction",
