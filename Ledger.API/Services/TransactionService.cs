@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Ledger.API.DTOs;
 using Ledger.API.Models;
 using Ledger.API.Repositories;
@@ -102,7 +103,33 @@ public class TransactionService : ITransactionService
                 };
 
                 // Use repository to persist idempotency entry (shares same DbContext scope)
-                await _idempotencyRepository.CreateAsync(entry);
+                // If a concurrent request already inserted the same key, catch the
+                // DB update exception, rollback this transaction and return the
+                // existing cached response to avoid duplicate processing.
+                    try
+                    {
+                        await _idempotencyRepository.CreateAsync(entry);
+                    }
+                catch (DbUpdateException)
+                {
+                    await dbTx.RollbackAsync();
+
+                    var existingEntry = await _idempotencyRepository.GetByKeyAsync(idempotencyKey);
+                    if (existingEntry != null)
+                    {
+                        try
+                        {
+                            var cached = JsonSerializer.Deserialize<TransactionResponseDto>(existingEntry.ResponseBody);
+                            if (cached != null) return cached;
+                        }
+                        catch
+                        {
+                            // fall through and rethrow below
+                        }
+                    }
+
+                    throw;
+                }
             }
 
             await dbTx.CommitAsync();
