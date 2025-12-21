@@ -4,6 +4,7 @@ using Ledger.API.DTOs;
 using Ledger.API.Models;
 using Ledger.API.Repositories;
 using Ledger.API.Data;
+using Ledger.API.Repositories;
 
 namespace Ledger.API.Services;
 
@@ -11,18 +12,18 @@ public class TransactionService : ITransactionService
 {
     private readonly ITransactionRepository _transactionRepository;
     private readonly ILoginRepository _loginRepository;
-    private readonly ApplicationDbContext _context;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IIdempotencyRepository _idempotencyRepository;
 
     public TransactionService(
         ITransactionRepository transactionRepository,
         ILoginRepository loginRepository,
-        ApplicationDbContext context,
+        IUnitOfWork unitOfWork,
         IIdempotencyRepository idempotencyRepository)
     {
         _transactionRepository = transactionRepository;
         _loginRepository = loginRepository;
-        _context = context;
+        _unitOfWork = unitOfWork;
         _idempotencyRepository = idempotencyRepository;
     }
 
@@ -61,8 +62,7 @@ public class TransactionService : ITransactionService
             throw new InvalidOperationException("Insufficient balance");
         }
 
-        // Use a DB transaction to atomically create transaction, update balance, and store idempotency
-        await using var dbTx = await _context.Database.BeginTransactionAsync();
+        await using var tx = await _unitOfWork.BeginTransactionAsync();
         try
         {
             var transaction = new Transaction
@@ -82,10 +82,9 @@ public class TransactionService : ITransactionService
             user.Balance += netAmount;
             user.UpdatedAt = DateTime.UtcNow;
 
-            // Persist changes
-            _context.Transactions.Add(transaction);
-            _context.Logins.Update(user);
-            await _context.SaveChangesAsync();
+            // Persist changes via repositories (operations occur within transaction)
+            await _transactionRepository.CreateAsync(transaction);
+            await _loginRepository.UpdateAsync(user);
 
             var result = MapToDto(transaction);
 
@@ -102,17 +101,13 @@ public class TransactionService : ITransactionService
                     ExpiresAt = DateTime.UtcNow.AddDays(1)
                 };
 
-                // Use repository to persist idempotency entry (shares same DbContext scope)
-                // If a concurrent request already inserted the same key, catch the
-                // DB update exception, rollback this transaction and return the
-                // existing cached response to avoid duplicate processing.
-                    try
-                    {
-                        await _idempotencyRepository.CreateAsync(entry);
-                    }
+                try
+                {
+                    await _idempotencyRepository.CreateAsync(entry);
+                }
                 catch (DbUpdateException)
                 {
-                    await dbTx.RollbackAsync();
+                    await tx.RollbackAsync();
 
                     var existingEntry = await _idempotencyRepository.GetByKeyAsync(idempotencyKey);
                     if (existingEntry != null)
@@ -132,13 +127,13 @@ public class TransactionService : ITransactionService
                 }
             }
 
-            await dbTx.CommitAsync();
+            await tx.CommitAsync();
 
             return MapToDto(transaction);
         }
         catch
         {
-            await dbTx.RollbackAsync();
+            await tx.RollbackAsync();
             throw;
         }
     }

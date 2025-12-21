@@ -10,6 +10,7 @@ using Ledger.Tests.Helpers;
 using Ledger.API.DTOs;
 using Ledger.API.Models;
 using Xunit;
+using Ledger.Infrastructure.Repositories;
 
 namespace Ledger.Tests.Integration;
 
@@ -52,7 +53,8 @@ public class TransactionServiceIntegrationTests
             var txRepo = new TransactionRepository(ctx);
             var loginRepo = new LoginRepository(ctx);
             var idemRepo = new IdempotencyRepository(ctx);
-            var service = new TransactionService(txRepo, loginRepo, ctx, idemRepo);
+            var uow = new TestUnitOfWork(ctx);
+            var service = new TransactionService(txRepo, loginRepo, uow, idemRepo);
 
             var user = await ctx.Logins.FirstAsync();
             var result = await service.CreateTransactionAsync(user.Id, dto, key);

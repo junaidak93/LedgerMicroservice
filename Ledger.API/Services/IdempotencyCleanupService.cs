@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ledger.API.Data;
 using Microsoft.EntityFrameworkCore;
+using Ledger.API.Repositories;
 
 namespace Ledger.API.Services;
 
@@ -47,21 +48,17 @@ public class IdempotencyCleanupService : BackgroundService
     private async Task CleanupOnceAsync(CancellationToken cancellationToken)
     {
         using var scope = _services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IIdempotencyRepository>();
 
         var threshold = DateTime.UtcNow - _options.MaxAge;
-        var toRemove = await context.IdempotencyKeys
-            .Where(k => k.ExpiresAt != null && k.ExpiresAt < DateTime.UtcNow)
-            .ToListAsync(cancellationToken);
+        var deleted = await repo.DeleteExpiredAsync(threshold);
 
-        if (toRemove.Count == 0)
+        if (deleted == 0)
         {
             _logger.LogDebug("No expired idempotency keys found.");
             return;
         }
 
-        context.IdempotencyKeys.RemoveRange(toRemove);
-        var deleted = await context.SaveChangesAsync(cancellationToken);
-        _logger.LogInformation("Deleted {Count} expired idempotency keys (rows affected: {Deleted}).", toRemove.Count, deleted);
+        _logger.LogInformation("Deleted expired idempotency keys (rows affected: {Deleted}).", deleted);
     }
 }
