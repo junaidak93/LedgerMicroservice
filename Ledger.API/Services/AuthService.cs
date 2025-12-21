@@ -48,9 +48,21 @@ public class AuthService : IAuthService
     public async Task<TokenResponseDto> LoginAsync(LoginDto loginDto)
     {
         var login = await _loginRepository.GetByEmailAsync(loginDto.Email);
-        if (login == null || !PasswordHasher.VerifyPassword(loginDto.Password, login.PasswordHash))
+        if (login == null)
         {
             throw new UnauthorizedAccessException("Invalid email or password");
+        }
+
+        if (!PasswordHasher.VerifyPassword(loginDto.Password, login.PasswordHash))
+        {
+            throw new UnauthorizedAccessException("Invalid email or password");
+        }
+
+        // If the stored password is legacy (SHA256), rehash using PBKDF2 and update record
+        if (!login.PasswordHash.StartsWith("pbkdf2_sha256$", StringComparison.Ordinal))
+        {
+            login.PasswordHash = PasswordHasher.HashPassword(loginDto.Password);
+            await _loginRepository.UpdateAsync(login);
         }
 
         return await GenerateTokensAsync(login);
