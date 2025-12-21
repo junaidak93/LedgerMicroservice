@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Ledger.API.Data;
 using Ledger.API.Repositories;
 using Ledger.API.Services;
@@ -17,6 +18,7 @@ public class TransactionServiceTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: "tx_test_db_1")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         await using var context = new ApplicationDbContext(options);
@@ -53,6 +55,7 @@ public class TransactionServiceTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName: "tx_test_db_2")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         await using var context = new ApplicationDbContext(options);
