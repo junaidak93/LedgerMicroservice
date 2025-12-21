@@ -3,8 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Ledger.API.DTOs;
 using Ledger.API.Models;
 using Ledger.API.Repositories;
-using Ledger.API.Data;
-using Ledger.API.Repositories;
 
 namespace Ledger.API.Services;
 
