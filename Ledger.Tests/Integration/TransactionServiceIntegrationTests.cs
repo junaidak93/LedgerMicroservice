@@ -10,6 +10,7 @@ using Ledger.Tests.Helpers;
 using Ledger.API.DTOs;
 using Ledger.API.Models;
 using Xunit;
+using Ledger.Infrastructure.Repositories;
 
 namespace Ledger.Tests.Integration;
 
