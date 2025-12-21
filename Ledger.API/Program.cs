@@ -9,6 +9,7 @@ using Ledger.API.Data;
 using Ledger.API.Helpers;
 using Ledger.API.Middleware;
 using Ledger.API.Repositories;
+using Ledger.Infrastructure.Extensions;
 using Ledger.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -95,12 +96,12 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// Dependency Injection
-builder.Services.AddScoped<ILoginRepository, LoginRepository>();
-builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
-builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
-builder.Services.AddScoped<IStatsRepository, StatsRepository>();
-builder.Services.AddScoped<IAuditRepository, AuditRepository>();
+// Infrastructure DI registrations
+builder.Services.AddInfrastructureServices();
+
+// Idempotency cleanup service
+builder.Services.Configure<Ledger.API.Services.IdempotencyCleanupOptions>(builder.Configuration.GetSection("IdempotencyCleanup"));
+builder.Services.AddHostedService<Ledger.API.Services.IdempotencyCleanupService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();

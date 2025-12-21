@@ -1,5 +1,9 @@
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Ledger.API.DTOs;
 using Ledger.API.Models;
+using Ledger.API.Repositories;
+using Ledger.API.Data;
 using Ledger.API.Repositories;
 
 namespace Ledger.API.Services;
@@ -8,17 +12,39 @@ public class TransactionService : ITransactionService
 {
     private readonly ITransactionRepository _transactionRepository;
     private readonly ILoginRepository _loginRepository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IIdempotencyRepository _idempotencyRepository;
 
     public TransactionService(
         ITransactionRepository transactionRepository,
-        ILoginRepository loginRepository)
+        ILoginRepository loginRepository,
+        IUnitOfWork unitOfWork,
+        IIdempotencyRepository idempotencyRepository)
     {
         _transactionRepository = transactionRepository;
         _loginRepository = loginRepository;
+        _unitOfWork = unitOfWork;
+        _idempotencyRepository = idempotencyRepository;
     }
 
-    public async Task<TransactionResponseDto> CreateTransactionAsync(Guid userId, TransactionCreateDto dto)
+    public async Task<TransactionResponseDto> CreateTransactionAsync(Guid userId, TransactionCreateDto dto, string? idempotencyKey = null)
     {
+        // If idempotencyKey provided, ensure we haven't already processed it
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var existing = await _idempotencyRepository.GetByKeyAsync(idempotencyKey);
+            if (existing != null)
+            {
+                // Return stored response
+                try
+                {
+                    var cached = JsonSerializer.Deserialize<TransactionResponseDto>(existing.ResponseBody);
+                    if (cached != null) return cached;
+                }
+                catch { /* fall through and reprocess if deserialization fails */ }
+            }
+        }
+
         var user = await _loginRepository.GetByIdAsync(userId);
         if (user == null)
         {
@@ -26,8 +52,8 @@ public class TransactionService : ITransactionService
         }
 
         // Calculate net amount change
-        var netAmount = dto.Type == TransactionType.Incoming 
-            ? dto.Amount - dto.Fee 
+        var netAmount = dto.Type == TransactionType.Incoming
+            ? dto.Amount - dto.Fee
             : -(dto.Amount + dto.Fee);
 
         // Check if balance would go negative
@@ -36,27 +62,80 @@ public class TransactionService : ITransactionService
             throw new InvalidOperationException("Insufficient balance");
         }
 
-        var transaction = new Transaction
+        await using var tx = await _unitOfWork.BeginTransactionAsync();
+        try
         {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            Amount = dto.Amount,
-            Type = dto.Type,
-            Fee = dto.Fee,
-            Description = dto.Description,
-            Timestamp = dto.Timestamp ?? DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
+            var transaction = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Amount = dto.Amount,
+                Type = dto.Type,
+                Fee = dto.Fee,
+                Description = dto.Description,
+                Timestamp = dto.Timestamp ?? DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-        // Update cached balance
-        user.Balance += netAmount;
-        user.UpdatedAt = DateTime.UtcNow;
+            // Update cached balance
+            user.Balance += netAmount;
+            user.UpdatedAt = DateTime.UtcNow;
 
-        await _transactionRepository.CreateAsync(transaction);
-        await _loginRepository.UpdateAsync(user);
+            // Persist changes via repositories (operations occur within transaction)
+            await _transactionRepository.CreateAsync(transaction);
+            await _loginRepository.UpdateAsync(user);
 
-        return MapToDto(transaction);
+            var result = MapToDto(transaction);
+
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                var entry = new IdempotencyKey
+                {
+                    Id = Guid.NewGuid(),
+                    Key = idempotencyKey,
+                    UserId = userId,
+                    CreatedAt = DateTime.UtcNow,
+                    ResponseBody = JsonSerializer.Serialize(result),
+                    StatusCode = 201,
+                    ExpiresAt = DateTime.UtcNow.AddDays(1)
+                };
+
+                try
+                {
+                    await _idempotencyRepository.CreateAsync(entry);
+                }
+                catch (DbUpdateException)
+                {
+                    await tx.RollbackAsync();
+
+                    var existingEntry = await _idempotencyRepository.GetByKeyAsync(idempotencyKey);
+                    if (existingEntry != null)
+                    {
+                        try
+                        {
+                            var cached = JsonSerializer.Deserialize<TransactionResponseDto>(existingEntry.ResponseBody);
+                            if (cached != null) return cached;
+                        }
+                        catch
+                        {
+                            // fall through and rethrow below
+                        }
+                    }
+
+                    throw;
+                }
+            }
+
+            await tx.CommitAsync();
+
+            return MapToDto(transaction);
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<TransactionResponseDto?> GetTransactionByIdAsync(Guid transactionId, Guid? requestingUserId, bool isAdmin)

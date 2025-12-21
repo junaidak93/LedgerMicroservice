@@ -11,4 +11,3 @@ public interface ITransactionService
     Task<TransactionResponseDto> UpdateTransactionAsync(Guid transactionId, TransactionUpdateDto dto, Guid? requestingUserId, bool isAdmin);
     Task DeleteTransactionAsync(Guid transactionId);
 }
-
