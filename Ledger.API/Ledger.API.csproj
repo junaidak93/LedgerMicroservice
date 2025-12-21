@@ -19,4 +19,31 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Ledger.Domain\Ledger.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ledger.Application\Ledger.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ledger.Infrastructure\Ledger.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="DTOs\**\*.cs" />
+    <Compile Remove="Services\I*.cs" />
+    <Compile Remove="Repositories\I*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Models\**\*.cs" />
+  </ItemGroup>
+
+  <!-- Ensure these concrete implementations remain compiled in the API project -->
+  <ItemGroup>
+    <Compile Include="Services\IdempotencyCleanupService.cs" />
+    <Compile Include="Repositories\IdempotencyRepository.cs" />
+  </ItemGroup>
+
 </Project>

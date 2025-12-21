@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Ledger.API.Data;
 using Ledger.API.Models;
+using Ledger.API.Repositories;
 
-namespace Ledger.API.Repositories;
+namespace Ledger.Infrastructure.Repositories;
 
 public class IdempotencyRepository : IIdempotencyRepository
 {

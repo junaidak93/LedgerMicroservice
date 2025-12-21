@@ -31,7 +31,8 @@ public class TransactionServiceTests
         var loginRepo = new LoginRepository(context);
         var idemRepo = new IdempotencyRepository(context);
 
-        var service = new TransactionService(txRepo, loginRepo, context, idemRepo);
+        var uow = new TestUnitOfWork(context);
+        var service = new TransactionService(txRepo, loginRepo, uow, idemRepo);
 
         var dto = new TransactionCreateDto { Amount = 100, Fee = 5, Type = TransactionType.Incoming };
         var key = "idem-key-123";
@@ -68,7 +69,8 @@ public class TransactionServiceTests
         var loginRepo = new LoginRepository(context);
         var idemRepo = new IdempotencyRepository(context);
 
-        var service = new TransactionService(txRepo, loginRepo, context, idemRepo);
+        var uow = new TestUnitOfWork(context);
+        var service = new TransactionService(txRepo, loginRepo, uow, idemRepo);
 
         var dto = new TransactionCreateDto { Amount = 50, Fee = 2, Type = TransactionType.Incoming };
         var key = "idem-key-concurrent";
