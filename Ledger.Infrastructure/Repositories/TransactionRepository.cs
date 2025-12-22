@@ -48,25 +48,7 @@ public class TransactionRepository : ITransactionRepository
         await _context.SaveChangesAsync();
         return transaction;
     }
-
-    public async Task<Transaction> UpdateAsync(Transaction transaction)
-    {
-        transaction.UpdatedAt = DateTime.UtcNow;
-        _context.Transactions.Update(transaction);
-        await _context.SaveChangesAsync();
-        return transaction;
-    }
-
-    public async Task DeleteAsync(Guid id)
-    {
-        var transaction = await _context.Transactions.FindAsync(id);
-        if (transaction != null)
-        {
-            transaction.DeletedAt = DateTime.UtcNow;
-            transaction.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-        }
-    }
+    
 
     public async Task<int> GetCountByUserIdAsync(Guid userId)
     {

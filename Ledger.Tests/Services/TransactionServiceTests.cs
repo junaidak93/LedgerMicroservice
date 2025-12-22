@@ -45,6 +45,8 @@ public class TransactionServiceTests
 
         var txCount = await context.Transactions.CountAsync();
         Assert.Equal(1, txCount);
+        var storedTx = await context.Transactions.SingleAsync();
+        Assert.Equal(95, storedTx.CumulativeBalance);
 
         var updatedUser = await context.Logins.FindAsync(user.Id);
         Assert.NotNull(updatedUser);
@@ -85,9 +87,10 @@ public class TransactionServiceTests
 
         var txCount = await context.Transactions.CountAsync();
         Assert.Equal(1, txCount);
-
         var updatedUser = await context.Logins.FindAsync(user.Id);
         Assert.NotNull(updatedUser);
         Assert.Equal(1000 + (50 - 2), updatedUser!.Balance);
+        var storedTx = await context.Transactions.SingleAsync();
+        Assert.Equal(50 - 2, storedTx.CumulativeBalance);
     }
 }
