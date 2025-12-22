@@ -55,6 +55,102 @@ public class TransactionServiceTests
     }
 
     [Fact]
+    public async Task UpdateTransaction_InsertsReversalAndNewTransaction_UpdatesCumulativeAndUserBalance()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: "tx_test_db_update")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        await using var context = new ApplicationDbContext(options);
+
+        var user = TestHelpers.CreateTestUser("upduser@example.com");
+        context.Logins.Add(user);
+        await context.SaveChangesAsync();
+
+        var txRepo = new TransactionRepository(context);
+        var loginRepo = new LoginRepository(context);
+        var idemRepo = new IdempotencyRepository(context);
+
+        var uow = new TestUnitOfWork(context);
+        var service = new TransactionService(txRepo, loginRepo, uow, idemRepo);
+
+        // Create initial transaction: Incoming 50 fee 2 -> net = 48
+        var createDto = new TransactionCreateDto { Amount = 50, Fee = 2, Type = TransactionType.Incoming };
+        var created = await service.CreateTransactionAsync(user.Id, createDto);
+
+        // Update the transaction to Incoming 20 fee 1 -> newNet = 19
+        var updateDto = new TransactionUpdateDto { Amount = 20, Fee = 1, Type = TransactionType.Incoming };
+        var updated = await service.UpdateTransactionAsync(created.Id, updateDto, user.Id, isAdmin: true);
+
+        // There should be 3 transactions: original, reversal, updated
+        var txs = await context.Transactions.OrderBy(t => t.CreatedAt).ToListAsync();
+        Assert.Equal(3, txs.Count);
+
+        var original = txs[0];
+        var reversal = txs[1];
+        var newTx = txs[2];
+
+        // original net = 48, cumulative = 48
+        Assert.Equal(48m, original.CumulativeBalance);
+
+        // reversal should negate original: reversalNet = -(50 + 2) = -52 -> cumulative = 48 + (-52) = -4
+        Assert.Equal(-4m, reversal.CumulativeBalance);
+
+        // new transaction cumulative = -4 + 19 = 15
+        Assert.Equal(15m, newTx.CumulativeBalance);
+
+        // User balance: start 1000 -> +48 -> 1048 -> +(-52) -> 996 -> +19 -> 1015
+        var updatedUser = await context.Logins.FindAsync(user.Id);
+        Assert.Equal(1015m, updatedUser!.Balance);
+    }
+
+    [Fact]
+    public async Task DeleteTransaction_InsertsReversal_AdjustsCumulativeAndUserBalance()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: "tx_test_db_delete")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        await using var context = new ApplicationDbContext(options);
+
+        var user = TestHelpers.CreateTestUser("deluser@example.com");
+        context.Logins.Add(user);
+        await context.SaveChangesAsync();
+
+        var txRepo = new TransactionRepository(context);
+        var loginRepo = new LoginRepository(context);
+        var idemRepo = new IdempotencyRepository(context);
+
+        var uow = new TestUnitOfWork(context);
+        var service = new TransactionService(txRepo, loginRepo, uow, idemRepo);
+
+        // Create initial transaction: Incoming 50 fee 2 -> net = 48
+        var createDto = new TransactionCreateDto { Amount = 50, Fee = 2, Type = TransactionType.Incoming };
+        var created = await service.CreateTransactionAsync(user.Id, createDto);
+
+        // Delete the transaction (should insert a reversal)
+        await service.DeleteTransactionAsync(created.Id);
+
+        var txs = await context.Transactions.OrderBy(t => t.CreatedAt).ToListAsync();
+        Assert.Equal(2, txs.Count);
+
+        var original = txs[0];
+        var reversal = txs[1];
+
+        // original cumulative = 48
+        Assert.Equal(48m, original.CumulativeBalance);
+
+        // reversal cumulative = 48 + (-52) = -4
+        Assert.Equal(-4m, reversal.CumulativeBalance);
+
+        // User balance: 1000 -> +48 -> 1048 -> +(-52) -> 996
+        var updatedUser = await context.Logins.FindAsync(user.Id);
+        Assert.Equal(996m, updatedUser!.Balance);
+    }
+
+    [Fact]
     public async Task CreateTransaction_ConcurrentRequests_CreateOnlyOnce()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
