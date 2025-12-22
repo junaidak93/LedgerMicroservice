@@ -8,6 +8,5 @@ public interface ITransactionRepository
     Task<IEnumerable<Transaction>> GetByUserIdAsync(Guid userId, int pageNumber, int pageSize);
     Task<IEnumerable<Transaction>> GetAllAsync(int pageNumber, int pageSize);
     Task<Transaction> CreateAsync(Transaction transaction);
-    Task<Transaction> UpdateAsync(Transaction transaction);
-    Task DeleteAsync(Guid id);
+    // Update/Delete operations are handled at the service layer to preserve immutability
 }

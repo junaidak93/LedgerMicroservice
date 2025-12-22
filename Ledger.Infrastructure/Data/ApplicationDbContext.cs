@@ -41,6 +41,7 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(e => e.DeletedAt);
             entity.Property(e => e.Amount).HasPrecision(18, 2);
             entity.Property(e => e.Fee).HasPrecision(18, 2);
+                entity.Property(e => e.CumulativeBalance).HasPrecision(18, 2);
             entity.Property(e => e.Type).HasConversion<int>();
             entity.Property(e => e.Description).HasMaxLength(500);
             

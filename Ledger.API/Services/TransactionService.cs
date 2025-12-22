@@ -76,7 +76,12 @@ public class TransactionService : ITransactionService
                 UpdatedAt = DateTime.UtcNow
             };
 
-            // Update cached balance
+            // Compute cumulative balance from latest transaction for this user
+            var latest = (await _transactionRepository.GetByUserIdAsync(userId, 1, 1)).FirstOrDefault();
+            var latestBalance = latest?.CumulativeBalance ?? 0m;
+            transaction.CumulativeBalance = latestBalance + netAmount;
+
+            // Update cached balance (dual-write during transition)
             user.Balance += netAmount;
             user.UpdatedAt = DateTime.UtcNow;
 
@@ -184,40 +189,87 @@ public class TransactionService : ITransactionService
         {
             throw new InvalidOperationException("User not found");
         }
-
-        // Revert old transaction impact
-        var oldNetAmount = transaction.Type == TransactionType.Incoming
-            ? transaction.Amount - transaction.Fee
-            : -(transaction.Amount + transaction.Fee);
-        user.Balance -= oldNetAmount;
-
-        // Calculate new net amount change
-        var newNetAmount = dto.Type == TransactionType.Incoming
-            ? dto.Amount - dto.Fee
-            : -(dto.Amount + dto.Fee);
-
-        // Check if balance would go negative
-        if (user.Balance + newNetAmount < 0)
+        // Implement immutable update by inserting a reversal transaction and then the updated transaction
+        await using var tx = await _unitOfWork.BeginTransactionAsync();
+        try
         {
-            throw new InvalidOperationException("Insufficient balance");
+            // Create reversal transaction (opposite type) to negate the original impact
+            var reversalType = transaction.Type == TransactionType.Incoming
+                ? TransactionType.Outgoing
+                : TransactionType.Incoming;
+
+            var reversal = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                UserId = transaction.UserId,
+                Amount = transaction.Amount,
+                Type = reversalType,
+                Fee = transaction.Fee,
+                Description = $"Reversal of {transaction.Id}",
+                Timestamp = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                IsReversal = true,
+                OriginalTransactionId = transaction.Id
+            };
+            var reversalNet = reversal.Type == TransactionType.Incoming
+                ? reversal.Amount - reversal.Fee
+                : -(reversal.Amount + reversal.Fee);
+
+            // Compute cumulative for reversal: base it on latest before reversal
+            var latestBefore = (await _transactionRepository.GetByUserIdAsync(transaction.UserId, 1, 1)).FirstOrDefault();
+            var latestBeforeBalance = latestBefore?.CumulativeBalance ?? 0m;
+            reversal.CumulativeBalance = latestBeforeBalance + reversalNet;
+
+            // Apply reversal to cached balance (dual-write for transition)
+            user.Balance += reversalNet;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _transactionRepository.CreateAsync(reversal);
+
+            // Now insert the updated transaction as a new immutable row
+            var updatedTransaction = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                UserId = transaction.UserId,
+                Amount = dto.Amount,
+                Type = dto.Type,
+                Fee = dto.Fee,
+                Description = dto.Description,
+                Timestamp = dto.Timestamp ?? DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            var newNetAmount = updatedTransaction.Type == TransactionType.Incoming
+                ? updatedTransaction.Amount - updatedTransaction.Fee
+                : -(updatedTransaction.Amount + updatedTransaction.Fee);
+
+            if (user.Balance + newNetAmount < 0)
+            {
+                // revert by throwing — transaction scope will rollback
+                throw new InvalidOperationException("Insufficient balance");
+            }
+
+            // Compute cumulative for the new transaction. latestBeforeBalance + reversalNet is the balance after reversal.
+            var balanceAfterReversal = latestBeforeBalance + reversalNet;
+            updatedTransaction.CumulativeBalance = balanceAfterReversal + newNetAmount;
+
+            user.Balance += newNetAmount;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _transactionRepository.CreateAsync(updatedTransaction);
+            await _loginRepository.UpdateAsync(user);
+
+            await tx.CommitAsync();
+
+            return MapToDto(updatedTransaction);
         }
-
-        // Update transaction
-        transaction.Amount = dto.Amount;
-        transaction.Type = dto.Type;
-        transaction.Fee = dto.Fee;
-        transaction.Description = dto.Description;
-        transaction.Timestamp = dto.Timestamp ?? transaction.Timestamp;
-        transaction.UpdatedAt = DateTime.UtcNow;
-
-        // Update cached balance
-        user.Balance += newNetAmount;
-        user.UpdatedAt = DateTime.UtcNow;
-
-        await _transactionRepository.UpdateAsync(transaction);
-        await _loginRepository.UpdateAsync(user);
-
-        return MapToDto(transaction);
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task DeleteTransactionAsync(Guid transactionId)
@@ -234,15 +286,50 @@ public class TransactionService : ITransactionService
             throw new InvalidOperationException("User not found");
         }
 
-        // Revert transaction impact on balance
-        var netAmount = transaction.Type == TransactionType.Incoming
-            ? transaction.Amount - transaction.Fee
-            : -(transaction.Amount + transaction.Fee);
-        user.Balance -= netAmount;
-        user.UpdatedAt = DateTime.UtcNow;
+        await using var tx = await _unitOfWork.BeginTransactionAsync();
+        try
+        {
+            var reversalType = transaction.Type == TransactionType.Incoming
+                ? TransactionType.Outgoing
+                : TransactionType.Incoming;
 
-        await _transactionRepository.DeleteAsync(transactionId);
-        await _loginRepository.UpdateAsync(user);
+            var reversal = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                UserId = transaction.UserId,
+                Amount = transaction.Amount,
+                Type = reversalType,
+                Fee = transaction.Fee,
+                Description = $"Reversal of {transaction.Id}",
+                Timestamp = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                IsReversal = true,
+                OriginalTransactionId = transaction.Id
+            };
+
+            var reversalNet = reversal.Type == TransactionType.Incoming
+                ? reversal.Amount - reversal.Fee
+                : -(reversal.Amount + reversal.Fee);
+
+            // Compute cumulative for reversal based on latest transaction
+            var latestForDelete = (await _transactionRepository.GetByUserIdAsync(transaction.UserId, 1, 1)).FirstOrDefault();
+            var latestForDeleteBalance = latestForDelete?.CumulativeBalance ?? 0m;
+            reversal.CumulativeBalance = latestForDeleteBalance + reversalNet;
+
+            user.Balance += reversalNet;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _transactionRepository.CreateAsync(reversal);
+            await _loginRepository.UpdateAsync(user);
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     private static TransactionResponseDto MapToDto(Transaction transaction)
