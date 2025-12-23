@@ -74,6 +74,9 @@ public class TransactionServiceIntegrationTests
         var txCount = await verifyCtx.Transactions.CountAsync();
         Assert.Equal(1, txCount);
 
+        var storedTx = await verifyCtx.Transactions.SingleAsync();
+        Assert.Equal(50 - 2, storedTx.CumulativeBalance);
+
         var updatedUser = await verifyCtx.Logins.FirstAsync();
         Assert.Equal(1000 + (50 - 2), updatedUser.Balance);
 

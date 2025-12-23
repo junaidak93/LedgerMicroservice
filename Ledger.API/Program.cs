@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Text.Json.Serialization;
 using Ledger.API.Data;
 using Ledger.API.Helpers;
 using Ledger.API.Middleware;
@@ -15,7 +16,11 @@ using Ledger.API.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.IncludeFields = true);
+builder.Services.AddControllers().AddJsonOptions(options => 
+{
+    options.JsonSerializerOptions.IncludeFields = true;
+    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 builder.Services.AddEndpointsApiExplorer();
 
 // Configure Swagger with JWT support

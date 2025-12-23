@@ -16,6 +16,11 @@ public class Transaction
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? DeletedAt { get; set; }
 
+    // New fields for immutable reversal semantics and running balance
+    public decimal? CumulativeBalance { get; set; }
+    public bool IsReversal { get; set; } = false;
+    public Guid? OriginalTransactionId { get; set; }
+
     // Navigation property
     public virtual Login User { get; set; } = null!;
 }
